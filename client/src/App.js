@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import "./App.css";
 import "./Sidebar.css";
 import BatchUpload from "./components/BatchUpload";
+import Modal from "./components/Modal";
 
 const API = process.env.REACT_APP_API_URL || "http://localhost:3000/api";
 const slugifyKit = (kit) =>
@@ -119,26 +120,20 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editingKit, setEditingKit] = useState(null);
-  const deleteFromDashboard = (kit) => {
-    if (window.confirm("Delete this preparation? This cannot be undone."))
-      deleteKit(kit._id);
-  };
-  const renameKit = async (kit) => {
-    const displayName = window.prompt(
-      "Preparation name",
-      kit.displayName || kit.kit?.source?.role || "Interview preparation",
-    );
-    if (displayName === null) return;
+  const [kitModal,setKitModal]=useState(null); const [modalBusy,setModalBusy]=useState(false); const [modalError,setModalError]=useState("");
+  const deleteFromDashboard = (kit) => { setModalError("");setKitModal({type:'delete',kit}); };
+  const renameKit = (kit) => { setModalError("");setKitModal({type:'rename',kit,value:kit.displayName||kit.kit?.source?.role||'Interview preparation'}); };
+  const saveRename = async () => { const kit=kitModal.kit;const displayName=kitModal.value.trim(); if(!displayName)return setModalError('Kit name cannot be empty.');
     try {
+      setModalBusy(true); setModalError("");
       const updated = await request(`/kits/${kit._id}`, {
         method: "PATCH",
         body: JSON.stringify({ displayName }),
       });
       setKits((current) => current.map((item) => item._id === kit._id ? { ...item, displayName: updated.displayName } : item));
       setActive((current) => current?._id === kit._id ? { ...current, displayName: updated.displayName } : current);
-    } catch (err) {
-      setError(err.message);
-    }
+      setKitModal(null);
+    } catch (err) { setModalError(err.message); } finally { setModalBusy(false); }
   };
   const navigate = (nextPath) => {
     window.history.pushState({}, "", nextPath);
@@ -385,6 +380,7 @@ function App() {
           }}
         />
       )}
+      {kitModal && <Modal title={kitModal.type==='rename'?'Rename kit':'Delete kit?'} busy={modalBusy} onClose={()=>setKitModal(null)}>{kitModal.type==='rename'?<form className="modal-form" onSubmit={e=>{e.preventDefault();saveRename()}}><label>Kit name<input autoFocus value={kitModal.value} onChange={e=>setKitModal({...kitModal,value:e.target.value})}/></label>{modalError&&<p className="error">{modalError}</p>}<div className="modal-actions"><button type="button" className="secondary" disabled={modalBusy} onClick={()=>setKitModal(null)}>Cancel</button><button className="primary" disabled={modalBusy}>{modalBusy?'Saving…':'Save'}</button></div></form>:<div className="modal-form"><p><strong>{kitModal.kit.displayName||kitModal.kit.kit?.source?.role||'This kit'}</strong> will be permanently deleted. This action cannot be undone.</p>{modalError&&<p className="error">{modalError}</p>}<div className="modal-actions"><button type="button" className="secondary" disabled={modalBusy} onClick={()=>setKitModal(null)}>Cancel</button><button type="button" className="delete-button" disabled={modalBusy} onClick={async()=>{setModalBusy(true);await deleteKit(kitModal.kit._id);setModalBusy(false);setKitModal(null)}}>{modalBusy?'Deleting…':'Delete kit'}</button></div></div>}</Modal>}
     </div>
   );
 }
