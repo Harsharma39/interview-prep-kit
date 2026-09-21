@@ -4,14 +4,14 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { analyzeJobDescription } = require('../services/jd/analyze');
+const { analyzeJobDescription, grounded } = require('../services/jd/analyze');
 const { calculateCoverage } = require('../services/coverage');
 const { buildSchedule } = require('../services/scheduler');
 const { validateKit } = require('../schemas/kitSchema');
 const { mergeGeneratedSection } = require('../services/builder');
 const { isBlockedAddress, uniqueUrls, buildInterviewProcess, discoverPublicInterviewLinks } = require('../services/research');
 const { buildPrompt } = require('../services/llm');
-const { runCoveragePasses, assignQuestionIds, coverRequirements } = require('../services/generation');
+const { runCoveragePasses, assignQuestionIds, coverRequirements, createQuestions, createFlashcards, normalizeLlmQuestions } = require('../services/generation');
 const { evaluateCases, validateCase, isLocalEvaluatorUrl } = require('../batch/evaluate');
 const { generateKit } = require('../services/generation');
 const { parseClientOrigins } = require('../app');
@@ -69,6 +69,55 @@ const generatedFixture = () => ({
 test('extracts honest must and nice requirements', () => {
   const result = analyzeJobDescription('Senior Engineer\nRequired: React experience\nBonus: GraphQL\nLocation: Remote');
   assert.deepEqual(result.requirements.map(({ id, priority }) => ({ id, priority })), [{ id: 'r1', priority: 'must' }, { id: 'r2', priority: 'nice' }]);
+});
+
+test('atomizes detailed JD skills, rejects headings and boilerplate, and grounds every requirement', () => {
+  const jd = `Full Stack Engineer
+Skills
+We are looking for a skilled Full Stack Engineer with 2–5 years of experience to join our engineering team.
+- Strong hands-on experience with Python and Django, along with good frontend development skills.
+- Good knowledge of Django REST Framework (DRF) and REST APIs.
+- Proficiency in JavaScript/TypeScript, preferably React.js.
+- Experience with PostgreSQL/MySQL/MongoDB.
+- Good knowledge of Git and web application architecture.
+- Preferred: REST APIs.`;
+  const result = analyzeJobDescription(jd);
+  const texts = result.requirements.map((requirement) => requirement.text);
+  ['Python', 'Django', 'Django REST Framework (DRF)', 'REST APIs', 'JavaScript/TypeScript', 'React.js', 'PostgreSQL/MySQL/MongoDB', 'Git', 'web application architecture'].forEach((expected) => assert.ok(texts.includes(expected), `missing ${expected}`));
+  assert.ok(texts.some((text) => /2–5 years/i.test(text)));
+  assert.ok(!texts.some((text) => /^(skills|requirements)$/i.test(text)));
+  assert.ok(!texts.some((text) => /we are looking for/i.test(text)));
+  assert.equal(texts.filter((text) => text === 'REST APIs').length, 1);
+  assert.ok(result.requirements.every((requirement) => grounded(requirement.text, jd)));
+  assert.equal(grounded('Kubernetes', jd), false);
+});
+
+test('quality fallbacks generate competency questions and concise flashcards with valid requirement IDs', () => {
+  const requirements = [
+    { id: 'r1', text: 'REST APIs', kind: 'technical', priority: 'must' },
+    { id: 'r2', text: 'PostgreSQL/MySQL/MongoDB', kind: 'technical', priority: 'must' },
+    { id: 'r3', text: 'communication with stakeholders', kind: 'behavioural', priority: 'must' },
+  ];
+  const questions = createQuestions(requirements, 'Acme');
+  const flashcards = createFlashcards(requirements);
+  assert.ok(questions.every((question) => question.requirement_ids.every((id) => requirements.some((requirement) => requirement.id === id))));
+  assert.ok(questions.every((question) => !/how can you evidence:/i.test(question.prompt)));
+  assert.match(questions.find((question) => question.requirement_ids[0] === 'r1').prompt, /design and evolve an API/i);
+  assert.match(questions.find((question) => question.requirement_ids[0] === 'r2').prompt, /slow in production/i);
+  assert.ok(flashcards.every((card) => !/how can you evidence:/i.test(card.front)));
+  assert.ok(flashcards.every((card) => card.requirement_ids.length === 1));
+});
+
+test('LLM question normalization rejects broken templates and copied JD-sized requirement text', () => {
+  const paragraph = 'A'.repeat(150);
+  const requirements = [{ id: 'r1', text: 'React', kind: 'technical', priority: 'must' }, { id: 'r2', text: paragraph, kind: 'technical', priority: 'must' }];
+  const normalized = normalizeLlmQuestions({ questions: [
+    { requirement_ids: ['r1'], category: 'technical', prompt: 'How can you evidence: React?', answer_outline: 'x', difficulty: 2 },
+    { requirement_ids: ['r2'], category: 'technical', prompt: `Explain ${paragraph}`, answer_outline: 'x', difficulty: 2 },
+    { requirement_ids: ['r1'], category: 'technical', prompt: 'How would you structure React state for a feature with shared updates?', answer_outline: 'Concept, implementation, trade-offs, and example.', difficulty: 3 },
+  ] }, requirements);
+  assert.equal(normalized.length, 1);
+  assert.equal(normalized[0].requirement_ids[0], 'r1');
 });
 
 test('coverage identifies uncovered requirements for a second pass', () => {
@@ -257,6 +306,31 @@ test('full pipeline builds and validates a kit from a local company fixture with
   assert.ok(kit.role.requirements.length > 0);
   assert.deepEqual(kit.source.pages_used, ['http://localhost:8099/', 'http://localhost:8099/about', 'http://localhost:8099/products']);
   assert.match(kit.company_brief.summary, /Public information gathered/);
+});
+
+test('end-to-end detailed JD generation produces atomic grounded content with valid coverage and schedule', async () => {
+  const jd = `Full Stack Engineer
+Skills
+- 2-5 years of software engineering experience.
+- Experience with Python and Django.
+- Knowledge of Django REST Framework (DRF) and REST APIs.
+- Proficiency in JavaScript/TypeScript and React.
+- Experience with PostgreSQL/MySQL/MongoDB.
+- Knowledge of Git and web application architecture.`;
+  const kit = await withResearchFixture({
+    '/': { body: '<a href="/about">About</a>' },
+    '/about': { body: '<main>We build products for engineering teams.</main>' },
+    '/robots.txt': { body: 'User-agent: *\nAllow: /', type: 'text/plain' },
+  }, () => generateKit({ jd, company_url: 'http://localhost:8099/', days: 3 }));
+  const requirementTexts = kit.role.requirements.map((requirement) => requirement.text);
+  assert.equal(validateKit(kit).length, 0);
+  assert.ok(requirementTexts.includes('Python') && requirementTexts.includes('Django') && requirementTexts.includes('REST APIs') && requirementTexts.includes('React'));
+  assert.ok(!requirementTexts.some((text) => /^(skills|requirements)$/i.test(text) || /we are looking for/i.test(text) || text.length > 140));
+  assert.ok(kit.questions.every((question) => !/how can you evidence:/i.test(question.prompt) && question.requirement_ids.every((id) => kit.role.requirements.some((requirement) => requirement.id === id))));
+  assert.ok(kit.flashcards.every((card) => !/how can you evidence:/i.test(card.front)));
+  assert.deepEqual(kit.coverage.uncovered_requirement_ids, []);
+  const questionIds = new Set(kit.questions.map((question) => question.id));
+  assert.ok(kit.schedule.days.every((day) => day.question_ids.every((id) => questionIds.has(id))));
 });
 
 test('partial research failure skips the failed page and still produces a valid kit', async () => {

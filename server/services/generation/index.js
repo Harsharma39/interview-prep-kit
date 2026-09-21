@@ -8,14 +8,41 @@ const { generateWithGemini } = require('../llm');
 
 const stableHash = (jd, companyUrl, days) => crypto.createHash('sha256').update(`${jd.replace(/\s+/g, ' ').trim()}|${companyUrl.trim().replace(/\/$/, '')}|${Number(days)}`).digest('hex');
 
+const competencyType = (text) => {
+  if (/\b(api|rest|graphql|endpoint|http)\b/i.test(text)) return 'api';
+  if (/\b(database|sql|query|postgres|mysql|mongo|data model)\b/i.test(text)) return 'data';
+  if (/\b(architecture|system design|scalab|distributed|performance)\b/i.test(text)) return 'architecture';
+  if (/\b(git|version control|merge)\b/i.test(text)) return 'collaboration';
+  if (/\byears?\b.*\bexperience\b/i.test(text)) return 'experience';
+  return 'technology';
+};
+
+const technicalPrompt = (requirement) => {
+  const text = requirement.text;
+  switch (competencyType(text)) {
+    case 'api': return `How would you design and evolve an API using ${text}, including validation, error handling, and backwards compatibility?`;
+    case 'data': return `A feature using ${text} is slow in production. How would you diagnose the bottleneck and improve it without compromising correctness?`;
+    case 'architecture': return `How would ${text} shape the architecture of a system that must remain maintainable as traffic and teams grow?`;
+    case 'collaboration': return `Describe how you would use ${text} to safely integrate conflicting changes from multiple developers on the same feature.`;
+    case 'experience': return `Tell me about a production project that demonstrates your ${text}. What did you own, which decisions did you make, and what was the outcome?`;
+    default: return `Describe a production feature you would implement with ${text}. How would you structure it, test it, and handle a failure in production?`;
+  }
+};
+
+const outlineFor = (requirement, category) => {
+  if (category === 'behavioural' || competencyType(requirement.text) === 'experience') return 'Cover the situation, your personal responsibility, the decision or action you took, the measurable result, and what you would improve next time.';
+  if (category === 'system-design') return 'State assumptions, propose the components and data flow, explain key trade-offs, identify scaling or failure risks, and show how you would validate the design.';
+  return 'Explain the core concept, describe a concrete implementation approach, discuss relevant trade-offs and edge cases, and support it with a production example.';
+};
+
 const questionFor = (requirement, companyName, category) => {
   const promptByCategory = {
-    technical: `Walk me through a project where you used ${requirement.text}. What did you personally build and why?`,
-    behavioural: `Tell me about a time your work required ${requirement.text}. How did you approach the situation and collaborate?`,
-    'system-design': `How would ${requirement.text} influence the design trade-offs you would make for a scalable ${companyName} product?`,
-    'company-fit': `Which experience with ${requirement.text} best shows how you would contribute at ${companyName}?`,
+    technical: technicalPrompt(requirement),
+    behavioural: `Tell me about a situation where ${requirement.text} mattered to the outcome. What did you personally do, and how did you work with others?`,
+    'system-design': `In a product context similar to ${companyName}, how would you make design decisions around ${requirement.text} as scale and reliability requirements increase?`,
+    'company-fit': `Which concrete experience best demonstrates ${requirement.text}, and how would you apply the lessons to this role?`,
   };
-  return { requirement_ids: [requirement.id], category, prompt: promptByCategory[category], answer_outline: `Use a concrete example, explain your decisions, and finish with a measurable result relevant to ${requirement.text}.`, difficulty: requirement.priority === 'must' ? 3 : 2 };
+  return { requirement_ids: [requirement.id], category, prompt: promptByCategory[category], answer_outline: outlineFor(requirement, category), difficulty: requirement.priority === 'must' ? 3 : 2 };
 };
 
 const createQuestions = (requirements, companyName, categories) => requirements.flatMap((requirement) => {
@@ -24,7 +51,18 @@ const createQuestions = (requirements, companyName, categories) => requirements.
   return targets.map((target) => questionFor(requirement, companyName, target));
 }).map((question, index) => ({ ...question, id: `q${index + 1}` }));
 
-const createFlashcards = (requirements) => requirements.map((requirement, index) => ({ id: `f${index + 1}`, front: `How can you evidence: ${requirement.text}?`, back: `Prepare one concise example, the result, and what you learned about ${requirement.text}.`, requirement_ids: [requirement.id] }));
+const flashcardFor = (requirement, index) => {
+  const type = competencyType(requirement.text);
+  const front = type === 'api' ? `What design responsibilities matter when working with ${requirement.text}?`
+    : type === 'data' ? `How would you evaluate correctness and performance when working with ${requirement.text}?`
+      : type === 'architecture' ? `What trade-offs should you explain when discussing ${requirement.text}?`
+        : type === 'experience' ? `What evidence should you prepare for your ${requirement.text}?`
+          : `What problem does ${requirement.text} solve, and how would you apply it in production?`;
+  const back = type === 'experience' ? 'Prepare a concise STAR example: context, your ownership, technical decisions, measurable outcome, and the lesson learned.'
+    : 'Explain the core concept, a practical implementation choice, an important trade-off or failure mode, and one production example.';
+  return { id: `f${index + 1}`, front, back, requirement_ids: [requirement.id] };
+};
+const createFlashcards = (requirements) => requirements.map(flashcardFor);
 
 const parseCompanyUrl = (companyUrl) => {
   try {
@@ -44,6 +82,18 @@ const companyNameFromUrl = (companyUrl) => {
 
 const QUESTION_CATEGORIES = ['technical', 'behavioural', 'system-design', 'company-fit'];
 
+const hasBrokenTemplate = (text) => /how can you evidence:|how would you demonstrate\b/i.test(String(text || ''));
+const validQuestionText = (question, requirements) => {
+  const prompt = String(question.prompt || '').trim();
+  if (!prompt || prompt.length > 420 || hasBrokenTemplate(prompt)) return false;
+  // A complete JD paragraph is never a useful interview question. Atomic requirement text remains allowed.
+  return question.requirement_ids.every((id) => {
+    const requirement = requirements.find((item) => item.id === id);
+    return requirement && !(requirement.text.length > 140 && prompt.includes(requirement.text));
+  });
+};
+const validFlashcardText = (card) => !hasBrokenTemplate(card.front) && String(card.front || '').trim().length <= 260 && String(card.back || '').trim().length <= 520;
+
 const normalizeLlmQuestions = (llmOutput, requirements) => (llmOutput?.questions || []).map((question, index) => ({
   id: `q${index + 1}`,
   requirement_ids: (question.requirement_ids || []).filter((id) => requirements.some((requirement) => requirement.id === id)),
@@ -51,14 +101,14 @@ const normalizeLlmQuestions = (llmOutput, requirements) => (llmOutput?.questions
   prompt: String(question.prompt || '').trim(),
   answer_outline: String(question.answer_outline || '').trim(),
   difficulty: [1, 2, 3].includes(Number(question.difficulty)) ? Number(question.difficulty) : 2,
-})).filter((question) => question.prompt && question.requirement_ids.length);
+})).filter((question) => question.requirement_ids.length && validQuestionText(question, requirements));
 
 const normalizeLlmFlashcards = (llmOutput, requirements) => (llmOutput?.flashcards || []).map((card, index) => ({
   id: `f${index + 1}`,
   front: String(card.front || '').trim(),
   back: String(card.back || '').trim(),
   requirement_ids: (card.requirement_ids || []).filter((id) => requirements.some((requirement) => requirement.id === id)),
-})).filter((card) => card.front && card.back && card.requirement_ids.length);
+})).filter((card) => card.front && card.back && card.requirement_ids.length && validFlashcardText(card));
 
 const nextQuestionId = (questions) => {
   let maxId = 0;
@@ -83,7 +133,8 @@ const coverRequirements = (questions, requirements) => {
   const uncovered = calculateCoverage(requirements, questions);
   const allocateId = nextQuestionId(questions);
   uncovered.forEach((id) => {
-    questions.push({ id: allocateId(), requirement_ids: [id], category: 'technical', prompt: `What is your strongest evidence for requirement ${id}?`, answer_outline: 'Use a concrete situation, action, and measurable result from your experience.', difficulty: 2 });
+    const requirement = requirements.find((item) => item.id === id);
+    if (requirement) questions.push({ ...questionFor(requirement, 'the company', requirement.kind === 'behavioural' ? 'behavioural' : 'technical'), id: allocateId() });
   });
   return { uncovered, finalUncovered: calculateCoverage(requirements, questions) };
 };
@@ -163,4 +214,4 @@ const generateKit = async ({ jd, company_url, days, onStage = () => {}, question
   return kit;
 };
 
-module.exports = { generateKit, stableHash, runCoveragePasses, mergeQuestions, assignQuestionIds, coverRequirements };
+module.exports = { generateKit, stableHash, runCoveragePasses, mergeQuestions, assignQuestionIds, coverRequirements, createQuestions, createFlashcards, normalizeLlmQuestions, normalizeLlmFlashcards, questionFor };

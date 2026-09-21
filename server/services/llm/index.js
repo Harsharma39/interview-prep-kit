@@ -28,6 +28,17 @@ Return valid JSON only.
 Do not invent company facts or job requirements.
 Do not output or invent source URLs. Public interview-process material is not
 official policy unless the source itself is an official company page.
+
+The role.requirements list is the only authority for requirement IDs. Keep every
+question and flashcard tied only to those IDs. Write realistic interviewer
+questions that test implementation, debugging, design trade-offs, or genuine
+behavioural evidence for the underlying competency. Never use phrases such as
+"How can you evidence" or "How would you demonstrate". Do not copy a job
+description sentence into a question. Answer outlines must be specific to the
+question: technical answers should cover concept, implementation, trade-offs,
+and edge cases; behavioural answers should cover context, ownership, action,
+result, and learning. Flashcards should test concise recall of a concept, not
+ask the candidate to evidence a requirement.
 `;
 
 const generateWithGemini = async ({ role, companyName, corpus, interviewProcess, generationTask }) => {
