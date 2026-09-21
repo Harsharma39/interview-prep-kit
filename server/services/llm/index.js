@@ -39,6 +39,13 @@ question: technical answers should cover concept, implementation, trade-offs,
 and edge cases; behavioural answers should cover context, ownership, action,
 result, and learning. Flashcards should test concise recall of a concept, not
 ask the candidate to evidence a requirement.
+
+Before writing each question, choose an interview intent appropriate to the
+requirement: conceptual, implementation, debugging, trade-off, architecture,
+production experience, performance, security, testing, or behavioural. Use
+difficulty 1 for fundamentals, 2 for practical/debugging/trade-offs, and 3 for
+complex scenarios, architecture, or scale. Vary intents across the bank; do not
+produce a bank of paraphrased "describe a production feature" questions.
 `;
 
 const generateWithGemini = async ({ role, companyName, corpus, interviewProcess, generationTask }) => {

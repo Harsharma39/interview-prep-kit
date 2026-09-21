@@ -13,36 +13,58 @@ const competencyType = (text) => {
   if (/\b(database|sql|query|postgres|mysql|mongo|data model)\b/i.test(text)) return 'data';
   if (/\b(architecture|system design|scalab|distributed|performance)\b/i.test(text)) return 'architecture';
   if (/\b(git|version control|merge)\b/i.test(text)) return 'collaboration';
+  if (/\b(frontend|react|component|javascript|typescript|css|ui)\b/i.test(text)) return 'frontend';
+  if (/\b(test|quality assurance|automation)\b/i.test(text)) return 'testing';
+  if (/\b(security|auth|permission|privacy|encryption)\b/i.test(text)) return 'security';
   if (/\byears?\b.*\bexperience\b/i.test(text)) return 'experience';
   return 'technology';
 };
 
-const technicalPrompt = (requirement) => {
+const questionIntent = (requirement) => {
+  const type = competencyType(requirement.text);
+  if (type !== 'technology') return type;
+  // Deterministic selection gives distinct technical dimensions to otherwise
+  // similar requirements without random cosmetic wording.
+  const score = [...`${requirement.id}:${requirement.text}`].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return ['concept', 'implementation', 'testing', 'tradeoff'][score % 4];
+};
+
+const technicalPrompt = (requirement, difficulty) => {
   const text = requirement.text;
-  switch (competencyType(text)) {
+  switch (questionIntent(requirement)) {
     case 'api': return `How would you design and evolve an API using ${text}, including validation, error handling, and backwards compatibility?`;
     case 'data': return `A feature using ${text} is slow in production. How would you diagnose the bottleneck and improve it without compromising correctness?`;
     case 'architecture': return `How would ${text} shape the architecture of a system that must remain maintainable as traffic and teams grow?`;
     case 'collaboration': return `Describe how you would use ${text} to safely integrate conflicting changes from multiple developers on the same feature.`;
+    case 'frontend': return `A user interface built with ${text} is rendering more often than expected. How would you identify the cause and fix it?`;
+    case 'testing': return `What test strategy would you use for a feature involving ${text}, and which failures would you prioritize catching?`;
+    case 'security': return `What threats and security controls would you consider when implementing ${text} in a production application?`;
     case 'experience': return `Tell me about a production project that demonstrates your ${text}. What did you own, which decisions did you make, and what was the outcome?`;
-    default: return `Describe a production feature you would implement with ${text}. How would you structure it, test it, and handle a failure in production?`;
+    case 'concept': return `Explain the core ideas behind ${text} and when its behaviour becomes important in a production system.`;
+    case 'implementation': return `Walk me through how you would implement a maintainable feature using ${text}, from design through deployment.`;
+    case 'testing': return `How would you test an implementation using ${text}, including boundary cases and a realistic failure?`;
+    default: return difficulty >= 3 ? `What trade-offs would you evaluate when using ${text} in a system with demanding scale or reliability constraints?` : `When would you choose ${text} over a simpler alternative, and what trade-offs would guide that choice?`;
   }
 };
 
 const outlineFor = (requirement, category) => {
   if (category === 'behavioural' || competencyType(requirement.text) === 'experience') return 'Cover the situation, your personal responsibility, the decision or action you took, the measurable result, and what you would improve next time.';
   if (category === 'system-design') return 'State assumptions, propose the components and data flow, explain key trade-offs, identify scaling or failure risks, and show how you would validate the design.';
+  if (questionIntent(requirement) === 'data' || questionIntent(requirement) === 'frontend') return 'Explain how you would reproduce or observe the issue, instrument the system, isolate the root cause, implement a fix, verify it, and prevent recurrence.';
+  if (questionIntent(requirement) === 'testing') return 'Define the behaviours and edge cases to test, choose suitable test levels, explain failure signals, and describe how the tests protect future changes.';
+  if (questionIntent(requirement) === 'security') return 'Identify assets and threats, explain the controls and trade-offs, describe validation or monitoring, and include how you would respond to a failure.';
   return 'Explain the core concept, describe a concrete implementation approach, discuss relevant trade-offs and edge cases, and support it with a production example.';
 };
 
 const questionFor = (requirement, companyName, category) => {
+  const difficulty = requirement.priority === 'must' ? (questionIntent(requirement) === 'architecture' ? 3 : 2) : 1;
   const promptByCategory = {
-    technical: technicalPrompt(requirement),
+    technical: technicalPrompt(requirement, difficulty),
     behavioural: `Tell me about a situation where ${requirement.text} mattered to the outcome. What did you personally do, and how did you work with others?`,
     'system-design': `In a product context similar to ${companyName}, how would you make design decisions around ${requirement.text} as scale and reliability requirements increase?`,
     'company-fit': `Which concrete experience best demonstrates ${requirement.text}, and how would you apply the lessons to this role?`,
   };
-  return { requirement_ids: [requirement.id], category, prompt: promptByCategory[category], answer_outline: outlineFor(requirement, category), difficulty: requirement.priority === 'must' ? 3 : 2 };
+  return { requirement_ids: [requirement.id], category, prompt: promptByCategory[category], answer_outline: outlineFor(requirement, category), difficulty: category === 'system-design' ? 3 : difficulty };
 };
 
 const createQuestions = (requirements, companyName, categories) => requirements.flatMap((requirement) => {
@@ -82,7 +104,8 @@ const companyNameFromUrl = (companyUrl) => {
 
 const QUESTION_CATEGORIES = ['technical', 'behavioural', 'system-design', 'company-fit'];
 
-const hasBrokenTemplate = (text) => /how can you evidence:|how would you demonstrate\b/i.test(String(text || ''));
+const hasBrokenTemplate = (text) => /how can you evidence:|how would you demonstrate\b|describe a production feature regarding\b/i.test(String(text || ''));
+const questionShape = (text) => String(text || '').toLowerCase().replace(/\b[a-z0-9+.#/-]{2,}\b/g, (word) => (/^(how|would|you|what|when|tell|about|walk|through|explain|the|a|an|and|or|in|with|to|of|for|is|it|that|this|production|feature|system)$/i.test(word) ? word : '#')).replace(/\s+/g, ' ').trim();
 const validQuestionText = (question, requirements) => {
   const prompt = String(question.prompt || '').trim();
   if (!prompt || prompt.length > 420 || hasBrokenTemplate(prompt)) return false;
@@ -94,14 +117,23 @@ const validQuestionText = (question, requirements) => {
 };
 const validFlashcardText = (card) => !hasBrokenTemplate(card.front) && String(card.front || '').trim().length <= 260 && String(card.back || '').trim().length <= 520;
 
-const normalizeLlmQuestions = (llmOutput, requirements) => (llmOutput?.questions || []).map((question, index) => ({
+const normalizeLlmQuestions = (llmOutput, requirements) => {
+  const seenShapes = new Set();
+  return (llmOutput?.questions || []).map((question, index) => ({
   id: `q${index + 1}`,
   requirement_ids: (question.requirement_ids || []).filter((id) => requirements.some((requirement) => requirement.id === id)),
   category: QUESTION_CATEGORIES.includes(question.category) ? question.category : 'technical',
   prompt: String(question.prompt || '').trim(),
   answer_outline: String(question.answer_outline || '').trim(),
   difficulty: [1, 2, 3].includes(Number(question.difficulty)) ? Number(question.difficulty) : 2,
-})).filter((question) => question.requirement_ids.length && validQuestionText(question, requirements));
+  })).filter((question) => {
+    if (!question.requirement_ids.length || !validQuestionText(question, requirements)) return false;
+    const shape = questionShape(question.prompt);
+    if (seenShapes.has(shape)) return false;
+    seenShapes.add(shape);
+    return true;
+  });
+};
 
 const normalizeLlmFlashcards = (llmOutput, requirements) => (llmOutput?.flashcards || []).map((card, index) => ({
   id: `f${index + 1}`,

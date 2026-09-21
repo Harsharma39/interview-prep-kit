@@ -108,6 +108,25 @@ test('quality fallbacks generate competency questions and concise flashcards wit
   assert.ok(flashcards.every((card) => card.requirement_ids.length === 1));
 });
 
+test('multi-skill questions use different interview intents and depth-appropriate outlines', () => {
+  const requirements = [
+    { id: 'r1', text: 'REST APIs', kind: 'technical', priority: 'must' },
+    { id: 'r2', text: 'PostgreSQL', kind: 'technical', priority: 'must' },
+    { id: 'r3', text: 'React', kind: 'technical', priority: 'must' },
+    { id: 'r4', text: 'Git', kind: 'technical', priority: 'must' },
+    { id: 'r5', text: 'web application architecture', kind: 'technical', priority: 'must' },
+    { id: 'r6', text: 'communication with stakeholders', kind: 'behavioural', priority: 'must' },
+  ];
+  const questions = createQuestions(requirements, 'Acme');
+  const openings = new Set(questions.map((question) => question.prompt.split(' ')[0].toLowerCase()));
+  assert.ok(openings.size >= 4);
+  assert.ok(questions.every((question) => !/describe a production feature regarding|how can you evidence/i.test(question.prompt)));
+  assert.match(questions.find((question) => question.requirement_ids[0] === 'r3').answer_outline, /root cause/i);
+  assert.match(questions.find((question) => question.requirement_ids[0] === 'r5').prompt, /architecture/i);
+  assert.equal(questions.find((question) => question.requirement_ids[0] === 'r5').difficulty, 3);
+  assert.match(questions.find((question) => question.requirement_ids[0] === 'r6').answer_outline, /personal responsibility/i);
+});
+
 test('LLM question normalization rejects broken templates and copied JD-sized requirement text', () => {
   const paragraph = 'A'.repeat(150);
   const requirements = [{ id: 'r1', text: 'React', kind: 'technical', priority: 'must' }, { id: 'r2', text: paragraph, kind: 'technical', priority: 'must' }];
