@@ -195,13 +195,6 @@ function App() {
       setError(err.message);
     }
   };
-  const openPage = (nextPath) =>
-    window.open(
-      `${window.location.origin}${nextPath}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
-  const openKitNew = (record) => openPage(kitPath(record.kit, record._id));
   const openPractice = () => {
     if (!active?.kit?.flashcards?.length)
       return setError("This kit has no flashcards available for practice.");
@@ -334,7 +327,7 @@ function App() {
         {view === "dashboard" && (
           <Dashboard
             kits={kits}
-            onOpen={openKitNew}
+            onOpen={(record) => openKit(record._id)}
             onCreate={() => navigate("/create")}
             onRename={renameKit}
             onEdit={setEditingKit}
