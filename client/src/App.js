@@ -344,7 +344,7 @@ function App() {
             record={active}
             onRefresh={() => openKit(active._id)}
             onPractice={openPractice}
-            onDelete={deleteKit}
+            onDelete={() => deleteFromDashboard(active)}
             onChanged={setActive}
           />
         )}{" "}
@@ -385,37 +385,13 @@ function App() {
   );
 }
 
-const fallbackRename = async (kit) => {
-  const displayName = window.prompt(
-    "Preparation name",
-    kit.displayName || "Interview preparation",
-  );
-  if (displayName === null) return;
-  try {
-    await request(`/kits/${kit._id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ displayName }),
-    });
-    window.location.reload();
-  } catch (error) {
-    window.alert(error.message);
-  }
-};
-const fallbackEdit = () =>
-  window.alert("Open the preparation and use its edit controls.");
-const fallbackDelete = async (kit) => {
-  if (window.confirm("Delete this preparation? This cannot be undone.")) {
-    await request(`/kits/${kit._id}`, { method: "DELETE" });
-    window.location.reload();
-  }
-};
 function Dashboard({
   kits,
   onOpen,
   onCreate,
-  onRename = fallbackRename,
-  onEdit = fallbackEdit,
-  onDelete = fallbackDelete,
+  onRename,
+  onEdit,
+  onDelete,
 }) {
   return (
     <section className="content">
@@ -687,10 +663,7 @@ function KitView({ record, onRefresh, onPractice, onDelete, onChanged }) {
           100,
       )
     : 0;
-  const confirmDelete = () => {
-    if (window.confirm("Delete this preparation kit? This cannot be undone."))
-      onDelete(record._id);
-  };
+  const confirmDelete = onDelete;
   return (
     <section className="content">
       <div className="kit-summary">
@@ -868,7 +841,6 @@ function QuestionManager({ record, onChanged }) {
     }
   };
   const remove = async (id) => {
-    if (!window.confirm("Delete this question?")) return;
     setBusy(true);
     setError("");
     try {
@@ -1120,7 +1092,6 @@ function FlashcardManager({ record, onChanged }) {
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
   const remove = async (card) => {
-    if (!window.confirm("Delete this flashcard?")) return;
     setBusy(true);
     setError("");
     try {
