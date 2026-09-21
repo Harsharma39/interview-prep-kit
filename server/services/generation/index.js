@@ -10,7 +10,7 @@ const stableHash = (jd, companyUrl, days) => crypto.createHash('sha256').update(
 
 const competencyType = (text) => {
   if (/\b(api|rest|graphql|endpoint|http)\b/i.test(text)) return 'api';
-  if (/\b(database|sql|query|postgres|mysql|mongo|data model)\b/i.test(text)) return 'data';
+  if (/\b(database|sql|query|postgres(?:ql)?|mysql|mongo|data model)\b/i.test(text)) return 'data';
   if (/\b(architecture|system design|scalab|distributed|performance)\b/i.test(text)) return 'architecture';
   if (/\b(git|version control|merge)\b/i.test(text)) return 'collaboration';
   if (/\b(frontend|react|component|javascript|typescript|css|ui)\b/i.test(text)) return 'frontend';
@@ -104,7 +104,15 @@ const companyNameFromUrl = (companyUrl) => {
 
 const QUESTION_CATEGORIES = ['technical', 'behavioural', 'system-design', 'company-fit'];
 
-const hasBrokenTemplate = (text) => /how can you evidence:|how would you demonstrate\b|describe a production feature regarding\b/i.test(String(text || ''));
+// A plan is sent to the provider before question writing so it distributes
+// interview dimensions across the bank instead of independently choosing the
+// safest experience-question wording for every requirement.
+const planQuestionIntents = (requirements, categories) => requirements.flatMap((requirement) => {
+  const targets = categories?.length ? categories : [requirement.kind === 'behavioural' ? 'behavioural' : 'technical'];
+  return targets.map((category) => ({ requirement_id: requirement.id, category, intent: category === 'behavioural' ? 'behavioural / collaboration' : category === 'system-design' ? 'architecture / trade-offs' : category === 'company-fit' ? 'role-specific reasoning' : questionIntent(requirement), difficulty: questionFor(requirement, 'the company', category).difficulty }));
+});
+
+const hasBrokenTemplate = (text) => /how can you evidence:|how would you demonstrate\b|describe a production feature (?:regarding|where you used)\b/i.test(String(text || ''));
 const questionShape = (text) => String(text || '').toLowerCase().replace(/\b[a-z0-9+.#/-]{2,}\b/g, (word) => (/^(how|would|you|what|when|tell|about|walk|through|explain|the|a|an|and|or|in|with|to|of|for|is|it|that|this|production|feature|system)$/i.test(word) ? word : '#')).replace(/\s+/g, ' ').trim();
 const validQuestionText = (question, requirements) => {
   const prompt = String(question.prompt || '').trim();
@@ -214,8 +222,9 @@ const generateKit = async ({ jd, company_url, days, onStage = () => {}, question
   await onStage('researching');
   const research = await researchCompany(company_url, { allowPrivateResearch });
   let llmOutput = null;
-  try { llmOutput = await generateWithGemini({ role: roleAnalysis, companyName, corpus: research.corpus, interviewProcess: research.interview_process }); } catch (error) { if (process.env.GEMINI_API_KEY) console.warn(`LLM generation unavailable, using deterministic fallback: ${error.message}`); }
   const requestedCategories = Array.isArray(questionCategories) && questionCategories.length ? questionCategories.filter((category) => QUESTION_CATEGORIES.includes(category)) : null;
+  const questionPlan = planQuestionIntents(roleAnalysis.requirements, requestedCategories);
+  try { llmOutput = await generateWithGemini({ role: { ...roleAnalysis, question_plan: questionPlan }, companyName, corpus: research.corpus, interviewProcess: research.interview_process, generationTask: 'Generate the question bank using question_plan. For each entry, test its stated intent and difficulty. Do not reuse an intent or scenario structure when another planned angle is available.' }); } catch (error) { if (process.env.GEMINI_API_KEY) console.warn(`LLM generation unavailable, using deterministic fallback: ${error.message}`); }
   let questions = normalizeLlmQuestions(llmOutput, roleAnalysis.requirements).filter((question) => !requestedCategories || requestedCategories.includes(question.category));
   if (!questions.length) questions = createQuestions(roleAnalysis.requirements, companyName, requestedCategories);
   const coverage = await runCoveragePasses({
@@ -223,7 +232,7 @@ const generateKit = async ({ jd, company_url, days, onStage = () => {}, question
     initialQuestions: questions,
     generateTargetedQuestions: async (uncoveredIds) => {
       const gaps = roleAnalysis.requirements.filter((requirement) => uncoveredIds.includes(requirement.id));
-      const targetedOutput = await generateWithGemini({ role: { ...roleAnalysis, requirements: gaps }, companyName, corpus: research.corpus, interviewProcess: research.interview_process, generationTask: 'Generate only additional questions for these uncovered requirement IDs. Do not repeat covered requirements.' });
+      const targetedOutput = await generateWithGemini({ role: { ...roleAnalysis, requirements: gaps, question_plan: planQuestionIntents(gaps, requestedCategories) }, companyName, corpus: research.corpus, interviewProcess: research.interview_process, generationTask: 'Generate only additional questions for these uncovered requirement IDs using question_plan. Use a different valid intent from already covered questions; do not repeat their scenario structure.' });
       return normalizeLlmQuestions(targetedOutput, gaps);
     },
   });
@@ -246,4 +255,4 @@ const generateKit = async ({ jd, company_url, days, onStage = () => {}, question
   return kit;
 };
 
-module.exports = { generateKit, stableHash, runCoveragePasses, mergeQuestions, assignQuestionIds, coverRequirements, createQuestions, createFlashcards, normalizeLlmQuestions, normalizeLlmFlashcards, questionFor };
+module.exports = { generateKit, stableHash, runCoveragePasses, mergeQuestions, assignQuestionIds, coverRequirements, createQuestions, createFlashcards, normalizeLlmQuestions, normalizeLlmFlashcards, questionFor, planQuestionIntents };

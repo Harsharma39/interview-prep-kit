@@ -11,7 +11,7 @@ const { validateKit } = require('../schemas/kitSchema');
 const { mergeGeneratedSection } = require('../services/builder');
 const { isBlockedAddress, uniqueUrls, buildInterviewProcess, discoverPublicInterviewLinks } = require('../services/research');
 const { buildPrompt } = require('../services/llm');
-const { runCoveragePasses, assignQuestionIds, coverRequirements, createQuestions, createFlashcards, normalizeLlmQuestions } = require('../services/generation');
+const { runCoveragePasses, assignQuestionIds, coverRequirements, createQuestions, createFlashcards, normalizeLlmQuestions, planQuestionIntents } = require('../services/generation');
 const { evaluateCases, validateCase, isLocalEvaluatorUrl } = require('../batch/evaluate');
 const { generateKit } = require('../services/generation');
 const { parseClientOrigins } = require('../app');
@@ -130,6 +130,14 @@ test('multi-skill questions use different interview intents and depth-appropriat
   assert.match(questions.find((question) => question.requirement_ids[0] === 'r5').prompt, /architecture/i);
   assert.equal(questions.find((question) => question.requirement_ids[0] === 'r5').difficulty, 3);
   assert.match(questions.find((question) => question.requirement_ids[0] === 'r6').answer_outline, /personal responsibility/i);
+});
+
+test('question plan distributes meaningful intents and rejects requirement-substitution duplicates', () => {
+  const requirements = [{ id: 'r1', text: 'REST APIs', kind: 'technical', priority: 'must' }, { id: 'r2', text: 'React', kind: 'technical', priority: 'must' }, { id: 'r3', text: 'PostgreSQL', kind: 'technical', priority: 'must' }, { id: 'r4', text: 'communication', kind: 'behavioural', priority: 'must' }];
+  const plan = planQuestionIntents(requirements);
+  assert.deepEqual(plan.map((item) => item.intent), ['api', 'frontend', 'data', 'behavioural / collaboration']);
+  const normalized = normalizeLlmQuestions({ questions: requirements.slice(0, 2).map((requirement) => ({ requirement_ids: [requirement.id], category: 'technical', prompt: `Describe a production feature where you used ${requirement.text}.`, answer_outline: 'Example', difficulty: 2 })) }, requirements);
+  assert.equal(normalized.length, 0);
 });
 
 test('LLM question normalization rejects broken templates and copied JD-sized requirement text', () => {

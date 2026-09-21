@@ -46,6 +46,10 @@ production experience, performance, security, testing, or behavioural. Use
 difficulty 1 for fundamentals, 2 for practical/debugging/trade-offs, and 3 for
 complex scenarios, architecture, or scale. Vary intents across the bank; do not
 produce a bank of paraphrased "describe a production feature" questions.
+If role.question_plan is present, it is a required bank-level plan: generate
+one question for each planned requirement/category entry, use its assigned
+intent and difficulty, and deliberately avoid reusing the same scenario or
+answer structure across different entries.
 `;
 
 const generateWithGemini = async ({ role, companyName, corpus, interviewProcess, generationTask }) => {
