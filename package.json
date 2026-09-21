@@ -1,0 +1,7 @@
+{
+  "name": "interview-kit",
+  "private": true,
+  "scripts": {
+    "evaluate": "npm --prefix server run evaluate --"
+  }
+}

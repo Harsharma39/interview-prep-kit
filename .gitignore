@@ -1,0 +1,21 @@
+# Dependencies and generated builds
+node_modules/
+client/node_modules/
+server/node_modules/
+client/build/
+coverage/
+
+# Secrets and local environment configuration (.env.example remains tracked)
+.env
+.env.*
+!.env.example
+client/.env
+server/.env
+
+# Local editor state, logs, and temporary evaluator output
+.history/
+.DS_Store
+*.log
+*.tmp
+kits.json
+test-kits.json
