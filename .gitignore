@@ -4,6 +4,9 @@ client/node_modules/
 server/node_modules/
 client/build/
 coverage/
+# This is application source, not generated test coverage.
+!server/services/coverage/
+!server/services/coverage/index.js
 
 # Secrets and local environment configuration (.env.example remains tracked)
 .env

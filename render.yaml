@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: interview-kit-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CLIENT_ORIGIN
+        sync: false
+      - key: COOKIE_SAME_SITE
+        value: None
+      - key: ALLOW_PRIVATE_RESEARCH
+        value: false
+      - key: PUBLIC_INTERVIEW_RESEARCH
+        value: true
