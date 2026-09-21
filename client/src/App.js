@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import "./App.css";
+import "./Sidebar.css";
 import BatchUpload from "./components/BatchUpload";
 
 const API = process.env.REACT_APP_API_URL || "http://localhost:3000/api";
@@ -223,22 +224,23 @@ function App() {
   const sectionPath = (section) => kitPath(active.kit, active._id, section);
   return (
     <div className="app-shell">
-      <aside>
+      <aside className="app-sidebar">
         <button className="brand brand-button" onClick={() => navigate("/")}>
           prep<span>/</span>room
         </button>
         <p className="side-note">
           A focused preparation studio for your next conversation.
         </p>
-        <nav>
+        <nav className="sidebar-nav" aria-label="Workspace navigation">
           <button
-            className={view === "dashboard" ? "selected" : ""}
+            className={`sidebar-nav-item ${view === "dashboard" ? "selected" : ""}`}
+            aria-current={view === "dashboard" ? "page" : undefined}
             onClick={() => navigate("/")}
           >
             Workspace
           </button>
           <button
-            className={view === "create" ? "selected" : ""}
+            className="sidebar-new-preparation"
             onClick={() => navigate("/create")}
           >
             + New preparation
@@ -247,7 +249,7 @@ function App() {
             <>
               <span className="nav-label">CURRENT KIT</span>
               <button
-                className={view === "kit" ? "selected" : ""}
+                className="sidebar-kit-title"
                 onClick={() => openKit(active._id)}
               >
                 {active.displayName || active.kit?.source.company || "Active kit"}
@@ -255,43 +257,43 @@ function App() {
               {active.kit && (
                 <>
                   <button
-                    className={view === "company" ? "selected" : ""}
+                    className={`sidebar-nav-item ${view === "company" ? "selected" : ""}`} aria-current={view === "company" ? "page" : undefined}
                     onClick={() => navigate(sectionPath("company"))}
                   >
                     Company brief
                   </button>
                   <button
-                    className={view === "role" ? "selected" : ""}
+                    className={`sidebar-nav-item ${view === "role" ? "selected" : ""}`} aria-current={view === "role" ? "page" : undefined}
                     onClick={() => navigate(sectionPath("role"))}
                   >
                     Role breakdown
                   </button>
                   <button
-                    className={view === "questions" ? "selected" : ""}
+                    className={`sidebar-nav-item ${view === "questions" ? "selected" : ""}`} aria-current={view === "questions" ? "page" : undefined}
                     onClick={() => navigate(sectionPath("questions"))}
                   >
                     Questions
                   </button>
                   <button
-                    className={view === "flashcards" ? "selected" : ""}
+                    className={`sidebar-nav-item ${view === "flashcards" ? "selected" : ""}`} aria-current={view === "flashcards" ? "page" : undefined}
                     onClick={() => navigate(sectionPath("flashcards"))}
                   >
                     Flashcards
                   </button>
                   <button
-                    className={view === "schedule" ? "selected" : ""}
+                    className={`sidebar-nav-item ${view === "schedule" ? "selected" : ""}`} aria-current={view === "schedule" ? "page" : undefined}
                     onClick={() => navigate(sectionPath("schedule"))}
                   >
                     Study schedule
                   </button>
                   <button
-                    className={view === "practice" ? "selected" : ""}
+                    className={`sidebar-nav-item ${view === "practice" ? "selected" : ""}`} aria-current={view === "practice" ? "page" : undefined}
                     onClick={openPractice}
                   >
                     Practice mode
                   </button>
                   <button
-                    className={view === "weak-spots" ? "selected" : ""}
+                    className={`sidebar-nav-item ${view === "weak-spots" ? "selected" : ""}`} aria-current={view === "weak-spots" ? "page" : undefined}
                     onClick={() => navigate(sectionPath("weak-spots"))}
                   >
                     Weak spots
