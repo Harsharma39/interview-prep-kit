@@ -1246,6 +1246,9 @@ function Practice({ kit, kitId }) {
   const [revealed, setRevealed] = useState(false);
   const [error, setError] = useState("");
   const card = kit?.flashcards?.[index % (kit.flashcards.length || 1)];
+  const total = kit?.flashcards?.length || 0;
+  const position = (index % total) + 1;
+  const progress = Math.round((position / total) * 100);
   if (!card)
     return (
       <section className="content narrow">
@@ -1268,10 +1271,9 @@ function Practice({ kit, kitId }) {
   };
   return (
     <section className="content narrow">
-      <span className="eyebrow">
-        FLASHCARD {index + 1} / {kit.flashcards.length}
-      </span>
+      <span className="eyebrow">PRACTICE MODE</span>
       <h2>Build recall, not recognition.</h2>
+      <div className="practice-progress"><span>Flashcard {position} of {total}</span><span>{progress}%</span><div className="progress-track" role="progressbar" aria-label="Flashcard progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow={progress}><i style={{ width: `${progress}%` }} /></div></div>
       {error && <p className="error">{error}</p>}
       <div className="flashcard">
         <span className="eyebrow">PROMPT</span>
@@ -1282,14 +1284,14 @@ function Practice({ kit, kitId }) {
             <p>{card.back}</p>
           </div>
         ) : (
-          <button className="secondary" onClick={() => setRevealed(true)}>
+          <button className="reveal-button" onClick={() => setRevealed(true)}>
             Reveal answer
           </button>
         )}
       </div>
       {revealed && (
         <div className="confidence">
-          <span>How did that feel?</span>
+          <span>How confident were you?</span>
           <button onClick={() => rate(1)}>1 · Not confident</button>
           <button onClick={() => rate(2)}>2 · Somewhat</button>
           <button onClick={() => rate(3)}>3 · Confident</button>
@@ -1332,5 +1334,5 @@ function WeakSpots({ id }) {
     </section>
   );
 }
-export { CompanyBriefEditor, FlashcardManager, QuestionManager, RegenerationControls };
+export { CompanyBriefEditor, FlashcardManager, QuestionManager, RegenerationControls, Practice };
 export default App;

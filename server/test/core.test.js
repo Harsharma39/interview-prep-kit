@@ -71,6 +71,11 @@ test('extracts honest must and nice requirements', () => {
   assert.deepEqual(result.requirements.map(({ id, priority }) => ({ id, priority })), [{ id: 'r1', priority: 'must' }, { id: 'r2', priority: 'nice' }]);
 });
 
+test('strips known inline JD labels while retaining valid requirement content', () => {
+  const result = analyzeJobDescription('Skills: Strategic growth marketing\nRequirements: Python\nQualifications: 3+ years of backend development');
+  assert.deepEqual(result.requirements.map((requirement) => requirement.text), ['Strategic growth marketing', 'Python', '3+ years of backend development']);
+});
+
 test('atomizes detailed JD skills, rejects headings and boilerplate, and grounds every requirement', () => {
   const jd = `Full Stack Engineer
 Skills

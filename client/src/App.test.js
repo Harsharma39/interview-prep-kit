@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import App, { CompanyBriefEditor, FlashcardManager } from './App';
+import App, { CompanyBriefEditor, FlashcardManager, Practice } from './App';
 
 const record = {
   _id: 'kit-1',
@@ -40,4 +40,14 @@ test('edits a flashcard and retains its requirement ids from the server response
   await waitFor(() => expect(onChanged).toHaveBeenCalled());
   expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/kits/kit-1/flashcards/f1'), expect.objectContaining({ method: 'PATCH' }));
   expect(onChanged.mock.calls[0][0].kit.flashcards[0].requirement_ids).toEqual(['r1']);
+});
+
+test('practice mode reveals answers and calculates progress from the current card', () => {
+  const kit = { flashcards: [{ id: 'f1', front: 'First prompt', back: 'First answer' }, { id: 'f2', front: 'Second prompt', back: 'Second answer' }] };
+  render(<Practice kit={kit} kitId="kit-1" />);
+  expect(screen.getByText('Flashcard 1 of 2')).toBeInTheDocument();
+  expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50');
+  fireEvent.click(screen.getByRole('button', { name: /reveal answer/i }));
+  expect(screen.getByText('First answer')).toBeInTheDocument();
+  expect(screen.getByText(/how confident were you/i)).toBeInTheDocument();
 });

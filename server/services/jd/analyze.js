@@ -66,8 +66,9 @@ const analyzeJobDescription = (jd) => {
     if (SECTION_END.test(line)) { inRequirementsSection = false; return; }
     const marker = line.match(REQUIREMENT_MARKER);
     const bonus = line.match(BONUS_MARKER);
-    if (!marker && !bonus && !inRequirementsSection && !REQUIREMENT_HINT.test(line)) return;
-    const source = normalizeLine((marker || bonus)?.[2] || line);
+    const inlineLabel = /^(?:skills?|requirements?|qualifications?)\s*:\s*\S/i.test(line);
+    if (!marker && !bonus && !inlineLabel && !inRequirementsSection && !REQUIREMENT_HINT.test(line)) return;
+    const source = normalizeLine((marker || bonus)?.[2] || line).replace(/^(?:skills?|requirements?|qualifications?)\s*:\s*/i, '');
     atomize(source).forEach((candidate) => {
       const key = semanticKey(candidate);
       if (!grounded(candidate, text) || seen.has(key)) return;
